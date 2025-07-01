@@ -1,73 +1,70 @@
-const CACHE_NAME = 'barak-shop-cache-v1';
-const urlsToCache = [
-  '/',
-  '/manifest.webmanifest',
-];
+const CACHE_NAME = 'barak-webview-cache-v1';
+const OFFLINE_URL = '/';
 
-self.addEventListener('install', event => {
-  self.skipWaiting();
+self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      console.log('Opened cache');
-      return cache.addAll(urlsToCache);
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.add(OFFLINE_URL);
     })
   );
+  self.skipWaiting();
 });
 
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET' || event.request.url.startsWith('chrome-extension://')) {
-    return;
-  }
-
-  // For navigation requests, use a network-first strategy.
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          // If response is valid, cache it
-          if (response && response.status === 200 && response.type === 'basic') {
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then(cache => {
-              cache.put(event.request, responseToCache);
-            });
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      const cacheNames = await caches.keys();
+      await Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            return caches.delete(cacheName);
           }
-          return response;
         })
-        .catch(() => caches.match(event.request))
-    );
-    return;
-  }
-
-  // For other requests (assets), use a cache-first strategy.
-  event.respondWith(
-    caches.match(event.request).then(cachedResponse => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(event.request).then(networkResponse => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-          return networkResponse;
-        }
-
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then(cache => {
-          cache.put(event.request, responseToCache);
-        });
-
-        return networkResponse;
-      });
-    })
+      );
+      await self.clients.claim();
+    })()
   );
 });
 
-self.addEventListener('push', event => {
-  const data = event.data ? event.data.json() : { title: 'New Promotion!', body: 'Check out our latest deals.' };
-  const title = data.title || 'Barak Online Shop';
-  const options = {
-    body: data.body || 'You have a new message.',
-    icon: '/icon-192x192.png',
-    badge: '/icon-192x192.png'
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
+self.addEventListener('fetch', (event) => {
+    if (event.request.method !== 'GET') {
+        return;
+    }
+  
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            (async () => {
+                try {
+                    const networkResponse = await fetch(event.request);
+                    const cache = await caches.open(CACHE_NAME);
+                    cache.put(event.request, networkResponse.clone());
+                    return networkResponse;
+                } catch (error) {
+                    console.log('Fetch failed; returning offline page from cache.', error);
+                    const cache = await caches.open(CACHE_NAME);
+                    const cachedResponse = await cache.match(OFFLINE_URL);
+                    return cachedResponse;
+                }
+            })()
+        );
+        return;
+    }
+
+    event.respondWith(
+        (async () => {
+            const cache = await caches.open(CACHE_NAME);
+            const cachedResponse = await cache.match(event.request);
+            if (cachedResponse) {
+                return cachedResponse;
+            }
+
+            try {
+                const networkResponse = await fetch(event.request);
+                cache.put(event.request, networkResponse.clone());
+                return networkResponse;
+            } catch (error) {
+                console.log('Fetch for asset failed.', error);
+            }
+        })()
+    );
 });
