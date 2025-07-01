@@ -1,70 +1,51 @@
-const CACHE_NAME = 'barak-webview-cache-v1';
-const OFFLINE_URL = '/';
 
-self.addEventListener('install', (event) => {
+const CACHE_NAME = 'barak-shop-cache-v1';
+const urlsToCache = [
+  '/',
+  '/manifest.webmanifest',
+  '/icon-192x192.png',
+  '/icon-512x512.png'
+];
+
+self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.add(OFFLINE_URL);
-    })
+    caches.open(CACHE_NAME)
+      .then(cache => {
+        console.log('Opened cache');
+        return cache.addAll(urlsToCache);
+      })
   );
-  self.skipWaiting();
 });
 
-self.addEventListener('activate', (event) => {
+self.addEventListener('fetch', event => {
+  // We only want to cache GET requests.
+  if (event.request.method !== 'GET') {
+    return;
+  }
+  
+  event.respondWith(
+    fetch(event.request).catch(() => {
+      // If the fetch fails (e.g., offline), we try to serve from cache.
+      return caches.match(event.request).then(response => {
+        // If we have a cached response, serve it.
+        // Otherwise, the app's frontend will show the offline message.
+        return response;
+      });
+    })
+  );
+});
+
+self.addEventListener('activate', event => {
+  const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
-    (async () => {
-      const cacheNames = await caches.keys();
-      await Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
+    caches.keys().then(cacheNames => {
+      return Promise.all(
+        cacheNames.map(cacheName => {
+          if (cacheWhitelist.indexOf(cacheName) === -1) {
             return caches.delete(cacheName);
           }
         })
       );
-      await self.clients.claim();
-    })()
+    })
   );
-});
-
-self.addEventListener('fetch', (event) => {
-    if (event.request.method !== 'GET') {
-        return;
-    }
-  
-    if (event.request.mode === 'navigate') {
-        event.respondWith(
-            (async () => {
-                try {
-                    const networkResponse = await fetch(event.request);
-                    const cache = await caches.open(CACHE_NAME);
-                    cache.put(event.request, networkResponse.clone());
-                    return networkResponse;
-                } catch (error) {
-                    console.log('Fetch failed; returning offline page from cache.', error);
-                    const cache = await caches.open(CACHE_NAME);
-                    const cachedResponse = await cache.match(OFFLINE_URL);
-                    return cachedResponse;
-                }
-            })()
-        );
-        return;
-    }
-
-    event.respondWith(
-        (async () => {
-            const cache = await caches.open(CACHE_NAME);
-            const cachedResponse = await cache.match(event.request);
-            if (cachedResponse) {
-                return cachedResponse;
-            }
-
-            try {
-                const networkResponse = await fetch(event.request);
-                cache.put(event.request, networkResponse.clone());
-                return networkResponse;
-            } catch (error) {
-                console.log('Fetch for asset failed.', error);
-            }
-        })()
-    );
 });
