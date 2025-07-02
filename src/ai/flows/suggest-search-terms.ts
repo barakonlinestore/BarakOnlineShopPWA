@@ -30,6 +30,18 @@ const SuggestSearchTermsOutputSchema = z.object({
 export type SuggestSearchTermsOutput = z.infer<typeof SuggestSearchTermsOutputSchema>;
 
 export async function suggestSearchTerms(input: SuggestSearchTermsInput): Promise<SuggestSearchTermsOutput> {
+  // Check if AI is properly configured
+  if (!process.env.GOOGLE_AI_API_KEY) {
+    // Return basic suggestions if AI is not available
+    return {
+      suggestions: [
+        `${input.searchTerm} products`,
+        `${input.searchTerm} online`,
+        `${input.searchTerm} shop`,
+      ]
+    };
+  }
+  
   return suggestSearchTermsFlow(input);
 }
 
@@ -57,7 +69,19 @@ const suggestSearchTermsFlow = ai.defineFlow(
     outputSchema: SuggestSearchTermsOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
-    return output!;
+    try {
+      const {output} = await prompt(input);
+      return output!;
+    } catch (error) {
+      console.error('AI flow error:', error);
+      // Fallback to basic suggestions
+      return {
+        suggestions: [
+          `${input.searchTerm} products`,
+          `${input.searchTerm} online`,
+          `${input.searchTerm} shop`,
+        ]
+      };
+    }
   }
 );

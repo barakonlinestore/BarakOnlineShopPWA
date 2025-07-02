@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { WifiOff, Loader2 } from 'lucide-react';
+import { PWADebug } from '@/components/pwa-debug';
 
 export default function Home() {
   const [isOnline, setIsOnline] = useState<boolean | undefined>(undefined);
@@ -25,6 +26,9 @@ export default function Home() {
     return (
         <div className="w-full h-screen flex flex-col items-center justify-center bg-background text-foreground">
             <Loader2 className="h-16 w-16 animate-spin text-primary" />
+            <div className="mt-8">
+              <PWADebug />
+            </div>
         </div>
     )
   }
